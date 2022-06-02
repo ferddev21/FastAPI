@@ -21,6 +21,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UserRequest(BaseModel):
+    email: str
+    fullname: str
+    password: str
+
+
 # Create the database
 Base.metadata.create_all(engine)
 
@@ -34,11 +40,6 @@ class UnicornException(Exception):
 
 # Initialize app
 app = FastAPI()
-
-
-@app.get("/")
-def root():
-    return "hello world"
 
 
 @app.post("/register", status_code=status.HTTP_201_CREATED)
@@ -80,17 +81,12 @@ def register(data: RegisterRequest):
 @app.post("/login")
 def login(data: LoginRequest):
 
-    # create a new database session
     session = Session(bind=engine, expire_on_commit=False)
 
-    # get the user item with the given email and password
     result = session.query(User).where(
         User.email == data.email, User.password == data.password).first()
 
-    # close the session
     session.close()
-
-    # check if todo item with given id exists. If not, raise exception and return 404 not found response
 
     if not result:
         return JSONResponse(
@@ -117,3 +113,127 @@ def login(data: LoginRequest):
                 }
             }
         )
+
+
+@app.get("/user/{id}")
+def get_by_id(id: int):
+
+    # create a new database session
+    session = Session(bind=engine, expire_on_commit=False)
+
+    # get the todo item with the given id
+    result = session.query(User).get(id)
+
+    # close the session
+    session.close()
+
+    if not result:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": 400,
+                "success": False,
+                "message": f"User Not Found",
+                "result": {}
+            }
+        )
+    else:
+        return {
+            "status": 200,
+            "success": True,
+            "message": f"User Found",
+            "result": {
+                result
+            }
+        }
+
+
+@app.get('/users')
+def get_all():
+    # create a new database session
+    session = Session(bind=engine, expire_on_commit=False)
+
+    users = session.query(User).all()
+
+    session.close()
+
+    if not users:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": 200,
+                "success": False,
+                "message": f"Failed",
+                "result": {}
+            }
+        )
+    else:
+        return {
+            "status": 200,
+            "success": True,
+            "message": f"Successfully",
+            "result":  users
+        }
+
+
+@app.put('/user/{id}')
+def user_update(id: int, data: UserRequest):
+    # create a new database session
+    session = Session(bind=engine, expire_on_commit=False)
+
+    user = session.query(User).get(id)
+
+    if user:
+        user = data
+        session.commit()
+
+    session.close()
+
+    if not user:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": 400,
+                "success": False,
+                "message": f"Update Failed",
+                "result": {}
+            }
+        )
+    else:
+        return {
+            "status": 200,
+            "success": True,
+            "message": f"Update was Successfully",
+            "result":  user
+        }
+
+
+@app.delete('/user/{id}')
+def user_delete(id: int):
+    # create a new database session
+    session = Session(bind=engine, expire_on_commit=False)
+
+    user = session.query(User).get(id)
+
+    if user:
+        session.delete(user)
+        session.commit()
+        session.close()
+    else:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": 404,
+                "success": True,
+                "message": f"User id {id} not found"
+            }
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": 200,
+            "success": True,
+            "message": f"Successfully delete user"
+        }
+    )
