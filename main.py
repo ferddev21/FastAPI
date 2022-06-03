@@ -1,11 +1,19 @@
+from csv import Dialect
+import datetime
 from email import message
 from urllib import response
-from fastapi import FastAPI, status, HTTPException
+from fastapi import Depends, FastAPI, File, Form, UploadFile, status, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import null
 from database import Base, engine, User
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+import shutil
+
+
+# Helper functions
+def datetimeSqlalchemyConvert(value):
+    return datetime.datetime.strptime(value, '%Y-%m-%d %H:%M')
 
 # Create Base Model Req
 
@@ -25,6 +33,8 @@ class UserRequest(BaseModel):
     email: str
     fullname: str
     password: str
+    phone_number: str
+    birthdate: str
 
 
 # Create the database
@@ -49,7 +59,8 @@ def register(data: RegisterRequest):
     session = Session(bind=engine, expire_on_commit=False)
 
     # create an instance of the database model
-    user = User(email=data.email, password=data.password, fullname=data.email)
+    user = User(email=data.email, password=data.password, fullname=data.email,
+                created_at=datetime.datetime.now(), updated_at=datetime.datetime.now(), status='active', role='member')
 
     # add it to the session and commit it
     session.add(user)
@@ -89,15 +100,19 @@ def login(data: LoginRequest):
     session.close()
 
     if not result:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": 400,
-                "success": False,
-                "message": f"User Not Found",
-                "result": {}
-            }
-        )
+        return {
+            "status": 400,
+            "success": False,
+            "message": f"User Not Found",
+            "result": null
+        }
+    elif result.status != 'active':
+        return {
+            "status": 200,
+            "success": True,
+            "message": f"User is blocked",
+            "result": null
+        }
     else:
         return JSONResponse(
             status_code=200,
@@ -134,7 +149,7 @@ def get_by_id(id: int):
                 "status": 400,
                 "success": False,
                 "message": f"User Not Found",
-                "result": {}
+                "result": null
             }
         )
     else:
@@ -177,34 +192,47 @@ def get_all():
 
 
 @app.put('/user/{id}')
-def user_update(id: int, data: UserRequest):
-    # create a new database session
-    session = Session(bind=engine, expire_on_commit=False)
+def user_update(id: int, data: UserRequest = Depends(), photo: UploadFile = File(...)):
+    try:
+        data.dict()
+        # create a new database session
+        session = Session(bind=engine, expire_on_commit=False)
 
-    user = session.query(User).get(id)
+        user = session.query(User).get(id)
 
-    if user:
-        user = data
+        filename = f"{id}_{photo.filename}"
+        # file
+        # content = await photo.read()
+        with open(filename, 'wb') as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+
+        if user:
+            user.email = data.email
+            user.fullname = data.fullname
+            user.password = data.password
+            user.phone_number = data.phone_number
+            user.birthdate = datetimeSqlalchemyConvert(data.birthdate)
+            user.updated_at = datetime.datetime.utcnow()
+            user.avatar_url = filename
+
         session.commit()
 
-    session.close()
+        session.close()
+        photo.close()
 
-    if not user:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": 400,
-                "success": False,
-                "message": f"Update Failed",
-                "result": {}
-            }
-        )
-    else:
         return {
             "status": 200,
             "success": True,
             "message": f"Update was Successfully",
             "result":  user
+        }
+
+    except Exception as e:
+        return {
+            "status": 500,
+            "success": False,
+            "message": f"{str(e)}",
+            "result": null
         }
 
 
